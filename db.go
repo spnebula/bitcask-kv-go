@@ -218,6 +218,31 @@ func (db *DB) getLogRecord(fid uint32) *data.DataFile {
 
 // Delete removes the log record associated with the given key from the Bitcask key-value store.
 func (db *DB) Delete(key []byte) error {
+	if len(key) == 0 { // key cannot be empty
+		return ErrKeyEmpty
+	}
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
+	pos := db.index.Get(key)
+	if pos == nil {
+		return ErrKeyNotFound
+	}
+
+	log_record := &data.LogRecord{
+		Key:   key,
+		Value: nil,
+		Type:  data.LogRecordDeleted,
+	}
+
+	_, err := db.appendLogRecord(log_record)
+	if err != nil {
+		return err
+	}
+
+	if ok := db.index.Delete(key); !ok {
+		return ErrIndexUpdateFailed
+	}
 	return nil
 }
 
