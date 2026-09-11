@@ -25,6 +25,9 @@ func (b *BTree) Get(key []byte) *data.LogRecordPos {
 	item := Item{
 		key: key,
 	}
+	// 加锁，防止 BTree 的 Get 操作并发冲突
+	b.lock.RLock()
+	defer b.lock.RUnlock()
 	result := b.tree.Get(&item)
 	if result == nil {
 		return nil
