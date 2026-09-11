@@ -21,8 +21,8 @@ func OpenDataFile(dirPath string, fileID uint32) (*DataFile, error) {
 	return dataFile, nil
 }
 
-func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, error) {
-	return nil, nil
+func (df *DataFile) ReadLogRecord(offset int64) (log_record *LogRecord, size int, err error) {
+	return nil, 0, nil
 }
 
 func (df *DataFile) Write([]byte) error {
