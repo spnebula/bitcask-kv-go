@@ -36,6 +36,8 @@ func (db *DB) Put(key []byte, value []byte) error {
 		Value: value,
 		Type:  data.LogRecordNormal,
 	}
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	pos, err := db.appendLogRecord(log_record)
 	if err != nil {
@@ -111,9 +113,6 @@ func (db *DB) Close() error {
 func (db *DB) appendLogRecord(log_record *data.LogRecord) (*data.LogRecordPos, error) {
 	encRecord, size := data.EncodeLogRecord(log_record)
 
-	db.mtx.Lock()
-	defer db.mtx.Unlock()
-
 	if db.activeFile == nil {
 		if err := db.setActiveDataFile(); err != nil {
 			return nil, err
@@ -159,7 +158,7 @@ func (db *DB) appendLogRecord(log_record *data.LogRecord) (*data.LogRecordPos, e
 func (db *DB) setActiveDataFile() error {
 	var initFileID uint32 = 0
 	// Implement the logic to append the log record to the data file and update the index accordingly.
-	if db.activeFile == nil {
+	if db.activeFile != nil {
 		initFileID = db.activeFile.FileID + 1
 	}
 
