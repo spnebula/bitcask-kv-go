@@ -287,7 +287,7 @@ func (db *DB) appendLogRecord(log_record *data.LogRecord) (*data.LogRecordPos, e
 	}
 
 	writeOffset := db.activeFile.WriteOffset
-	err := db.activeFile.Write(encRecord)
+	_, err := db.activeFile.Write(encRecord)
 	if err != nil {
 		return nil, err
 	}

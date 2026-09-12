@@ -4,13 +4,12 @@ import "os"
 
 type FileIO struct {
 	fd *os.File // fd is the file descriptor for the underlying file.
-
 }
 
 func NewFileIOManager(fileName string) (*FileIO, error) {
 	fd, err := os.OpenFile(fileName,
 		os.O_RDWR|os.O_CREATE|os.O_APPEND,
-		DataFilePerm)
+		DataFilePermission)
 	if err != nil {
 		return nil, err
 	}
@@ -23,7 +22,6 @@ func (fio *FileIO) Read(b []byte, p1 int64) (int, error) {
 }
 
 func (fio *FileIO) Write(b []byte) (int, error) {
-	// TODO: We can use WriteAt here to avoid the lock in the underlying file descriptor. But we need to maintain the offset ourselves.
 	return fio.fd.Write(b)
 }
 
@@ -33,4 +31,13 @@ func (fio *FileIO) Sync() error {
 
 func (fio *FileIO) Close() error {
 	return fio.fd.Close()
+}
+
+func (fio *FileIO) Size() (int64, error) {
+	stat, err := fio.fd.Stat()
+	if err != nil {
+		return 0, err
+	}
+	size := stat.Size()
+	return size, nil
 }
