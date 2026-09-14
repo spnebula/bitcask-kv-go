@@ -39,13 +39,13 @@ func OpenDataFile(dirPath string, fileID uint32) (*DataFile, error) {
 }
 
 // ReadLogRecord reads a log record from the data file at the given offset.
-func (df *DataFile) ReadLogRecord(offset int64) (log_record *LogRecord, size int, err error) {
+func (df *DataFile) ReadLogRecord(offset int64) (log_record *LogRecord, size int64, err error) {
 	file_size, err := df.IoManager.Size()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	var header_read_size int64 = 0
+	var header_read_size int64 = MaxLogRecordHeaderSize
 	if offset+MaxLogRecordHeaderSize > file_size {
 		header_read_size = file_size - offset
 	}
@@ -64,6 +64,7 @@ func (df *DataFile) ReadLogRecord(offset int64) (log_record *LogRecord, size int
 	}
 
 	var record_size int64 = int64(log_record_header.KeySize) + int64(log_record_header.ValueSize)
+	size = record_size + header_size
 
 	if log_record_header.KeySize > 0 || log_record_header.ValueSize > 0 {
 		record_bytes, err := df.ReadNBytes(offset+header_size, record_size)
@@ -75,10 +76,9 @@ func (df *DataFile) ReadLogRecord(offset int64) (log_record *LogRecord, size int
 			Value: record_bytes[log_record_header.KeySize:],
 			Type:  log_record_header.Type,
 		}
-		size = int(record_size)
 	}
 	// Verify CRC
-	crc := getLogRecordHeaderCRC(log_record, data_bytes[crc32.Size:header_size])
+	crc := calculateLogRecordCRC(log_record, data_bytes[crc32.Size:header_size])
 	if crc != log_record_header.crc {
 		return nil, 0, ErrInvalidLogRecordCRC
 	}
