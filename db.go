@@ -92,6 +92,11 @@ func (db *DB) loadDataFiles() error {
 			db.olderFiles[uint32(fid)] = data_file
 		}
 	}
+	if db.activeFile == nil {
+		if err := db.setActiveDataFile(); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -154,7 +159,7 @@ func (db *DB) checkOptions(options *Options) error {
 // Put inserts a new log record into the Bitcask key-value store.
 func (db *DB) Put(key []byte, value []byte) error {
 	if len(key) == 0 { // key cannot be empty
-		return ErrKeyEmpty
+		return ErrKeyIsEmpty
 	}
 
 	var log_record = &data.LogRecord{
@@ -180,7 +185,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 // Get retrieves the value associated with the given key from the Bitcask key-value store.
 func (db *DB) Get(key []byte) ([]byte, error) {
 	if len(key) == 0 { // key cannot be empty
-		return nil, ErrKeyEmpty
+		return nil, ErrKeyIsEmpty
 	}
 
 	db.mtx.RLock()
@@ -219,7 +224,7 @@ func (db *DB) getLogRecord(fid uint32) *data.DataFile {
 // Delete removes the log record associated with the given key from the Bitcask key-value store.
 func (db *DB) Delete(key []byte) error {
 	if len(key) == 0 { // key cannot be empty
-		return ErrKeyEmpty
+		return ErrKeyIsEmpty
 	}
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
@@ -256,8 +261,11 @@ func (db *DB) Close() error {
 		}
 	}
 
-	err := db.activeFile.Close()
-	return err
+	if db.activeFile != nil {
+		err := db.activeFile.Close()
+		return err
+	}
+	return nil
 }
 
 // appendLogRecord appends a new log record to the active data file.

@@ -9,3 +9,10 @@ type Options struct {
 	SyncWrites   bool
 	MemIndexType index.IndexerType
 }
+
+var DefaultOptions = &Options{
+	DirPath:      "/tmp",
+	DataFileSize: 64 * 1024 * 1024,
+	SyncWrites:   false,
+	MemIndexType: index.BTreeType,
+}

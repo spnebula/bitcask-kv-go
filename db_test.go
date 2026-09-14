@@ -1,0 +1,246 @@
+package bitcaskkvgo
+
+import (
+	"os"
+	"testing"
+
+	"github.com/attic-labs/testify/require"
+	"github.com/spnebula/bitcask-kv-go/utils"
+)
+
+func destroyDB(db *DB) {
+	if db != nil {
+		db.Close()
+		err := os.RemoveAll("/tmp/bitcask-kv-go")
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestDB_Example(t *testing.T) {
+	opts := DefaultOptions
+	opts.DirPath = "/tmp/bitcask-kv-go"
+	db, err := OpenDB(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destroyDB(db)
+
+	err = db.Put([]byte("name"), []byte("Hello, World!"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	value, err := db.Get([]byte("name"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(value) != "Hello, World!" {
+		t.Fatal("value not match")
+	}
+
+	err = db.Delete([]byte("name"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Get([]byte("name"))
+	if err == nil {
+		t.Fatal("value should be deleted")
+	}
+}
+
+func TestOpenDB(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-kv-go")
+	opts.DirPath = dir
+
+	db, err := OpenDB(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destroyDB(db)
+
+	require.NotNil(t, db)
+	require.Nil(t, err)
+}
+
+func TestDB_Put(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-put")
+	opts.DirPath = dir
+	opts.DataFileSize = 64 * 1024 * 1024
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	// 1.正常 Put 一条数据
+	err = db.Put(utils.GetTestKey(1), utils.RandomValue(24))
+	require.Nil(t, err)
+	val1, err := db.Get(utils.GetTestKey(1))
+	require.Nil(t, err)
+	require.NotNil(t, val1)
+
+	// 2.重复 Put key 相同的数据
+	err = db.Put(utils.GetTestKey(1), utils.RandomValue(24))
+	require.Nil(t, err)
+	val2, err := db.Get(utils.GetTestKey(1))
+	require.Nil(t, err)
+	require.NotNil(t, val2)
+
+	// 3.key 为空
+	err = db.Put(nil, utils.RandomValue(24))
+	require.Equal(t, ErrKeyIsEmpty, err)
+
+	// 4.value 为空
+	err = db.Put(utils.GetTestKey(22), nil)
+	require.Nil(t, err)
+	val3, err := db.Get(utils.GetTestKey(22))
+	require.Equal(t, 0, len(val3))
+	require.Nil(t, err)
+
+	// 5.写到数据文件进行了转换
+	for i := 0; i < 1000000; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.RandomValue(128))
+		require.Nil(t, err)
+	}
+	require.Equal(t, 2, len(db.olderFiles))
+
+	// 6.重启后再 Put 数据
+	err = db.Close()
+	require.Nil(t, err)
+
+	// 重启数据库
+	db2, err := OpenDB(opts)
+	require.Nil(t, err)
+	require.NotNil(t, db2)
+	val4 := utils.RandomValue(128)
+	err = db2.Put(utils.GetTestKey(55), val4)
+	require.Nil(t, err)
+	val5, err := db2.Get(utils.GetTestKey(55))
+	require.Nil(t, err)
+	require.Equal(t, val4, val5)
+}
+
+func TestDB_Get(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-get")
+	opts.DirPath = dir
+	opts.DataFileSize = 64 * 1024 * 1024
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	// 1.正常读取一条数据
+	err = db.Put(utils.GetTestKey(11), utils.RandomValue(24))
+	require.Nil(t, err)
+	val1, err := db.Get(utils.GetTestKey(11))
+	require.Nil(t, err)
+	require.NotNil(t, val1)
+
+	// 2.读取一个不存在的 key
+	val2, err := db.Get([]byte("some key unknown"))
+	require.Nil(t, val2)
+	require.Equal(t, ErrKeyNotFound, err)
+
+	// 3.值被重复 Put 后在读取
+	err = db.Put(utils.GetTestKey(22), utils.RandomValue(24))
+	require.Nil(t, err)
+	err = db.Put(utils.GetTestKey(22), utils.RandomValue(24))
+	val3, err := db.Get(utils.GetTestKey(22))
+	require.Nil(t, err)
+	require.NotNil(t, val3)
+
+	// 4.值被删除后再 Get
+	err = db.Put(utils.GetTestKey(33), utils.RandomValue(24))
+	require.Nil(t, err)
+	err = db.Delete(utils.GetTestKey(33))
+	require.Nil(t, err)
+	val4, err := db.Get(utils.GetTestKey(33))
+	require.Equal(t, 0, len(val4))
+	require.Equal(t, ErrKeyNotFound, err)
+
+	// 5.转换为了旧的数据文件，从旧的数据文件上获取 value
+	for i := 100; i < 1000000; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.RandomValue(128))
+		require.Nil(t, err)
+	}
+	require.Equal(t, 2, len(db.olderFiles))
+	val5, err := db.Get(utils.GetTestKey(101))
+	require.Nil(t, err)
+	require.NotNil(t, val5)
+
+	// 6.重启后，前面写入的数据都能拿到
+	err = db.Close()
+	require.Nil(t, err)
+
+	// 重启数据库
+	db2, err := OpenDB(opts)
+	val6, err := db2.Get(utils.GetTestKey(11))
+	require.Nil(t, err)
+	require.NotNil(t, val6)
+	require.Equal(t, val1, val6)
+
+	val7, err := db2.Get(utils.GetTestKey(22))
+	require.Nil(t, err)
+	require.NotNil(t, val7)
+	require.Equal(t, val3, val7)
+
+	val8, err := db.Get(utils.GetTestKey(33))
+	require.Equal(t, 0, len(val8))
+	require.Equal(t, ErrKeyNotFound, err)
+}
+
+func TestDB_Delete(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-delete")
+	opts.DirPath = dir
+	opts.DataFileSize = 64 * 1024 * 1024
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	// 1.正常删除一个存在的 key
+	err = db.Put(utils.GetTestKey(11), utils.RandomValue(128))
+	require.Nil(t, err)
+	err = db.Delete(utils.GetTestKey(11))
+	require.Nil(t, err)
+	_, err = db.Get(utils.GetTestKey(11))
+	require.Equal(t, ErrKeyNotFound, err)
+
+	// 2.删除一个不存在的 key
+	err = db.Delete([]byte("unknown key"))
+	require.NotNil(t, err)
+
+	// 3.删除一个空的 key
+	err = db.Delete(nil)
+	require.Equal(t, ErrKeyIsEmpty, err)
+
+	// 4.值被删除之后重新 Put
+	err = db.Put(utils.GetTestKey(22), utils.RandomValue(128))
+	require.Nil(t, err)
+	err = db.Delete(utils.GetTestKey(22))
+	require.Nil(t, err)
+
+	err = db.Put(utils.GetTestKey(22), utils.RandomValue(128))
+	require.Nil(t, err)
+	val1, err := db.Get(utils.GetTestKey(22))
+	require.NotNil(t, val1)
+	require.Nil(t, err)
+
+	// 5.重启之后，再进行校验
+	err = db.Close()
+	require.Nil(t, err)
+
+	// 重启数据库
+	db2, err := OpenDB(opts)
+	_, err = db2.Get(utils.GetTestKey(11))
+	require.Equal(t, ErrKeyNotFound, err)
+
+	val2, err := db2.Get(utils.GetTestKey(22))
+	require.Nil(t, err)
+	require.Equal(t, val1, val2)
+}
