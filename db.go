@@ -213,6 +213,52 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	return log_record.Value, nil
 }
 
+// ListKeys returns all keys in the Bitcask key-value store.
+func (db *DB) ListKeys() [][]byte {
+	iterator := db.index.Iterator(false)
+	keys := make([][]byte, 0, db.index.Size())
+	for iterator.Rewind(); iterator.Valid(); iterator.Next() {
+		keys = append(keys, iterator.Key())
+	}
+	return keys
+}
+
+// Fold iterates over all keys in the Bitcask key-value store and calls the given function for each key-value pair.
+func (db *DB) Fold(fn func(key []byte, value []byte) bool) error {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	iterator := db.index.Iterator(false)
+	for iterator.Rewind(); iterator.Valid(); iterator.Next() {
+		key := iterator.Key()
+		value, err := db.getValueByPosition(iterator.Value())
+		if err != nil {
+			return err
+		}
+		if !fn(key, value) {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (db *DB) getValueByPosition(pos *data.LogRecordPos) ([]byte, error) {
+	// acording to file id, read the data from the corresponding data file
+	data_file := db.getLogRecord(pos.Fid)
+	if data_file == nil {
+		return nil, ErrDataFileNotFound
+	}
+
+	log_record, _, err := data_file.ReadLogRecord(pos.Offset)
+	if err != nil {
+		return nil, err
+	}
+	if log_record.Type == data.LogRecordDeleted {
+		return nil, ErrKeyNotFound
+	}
+	return log_record.Value, nil
+}
+
 func (db *DB) getLogRecord(fid uint32) *data.DataFile {
 	if db.activeFile.FileID == fid {
 		return db.activeFile
@@ -249,6 +295,15 @@ func (db *DB) Delete(key []byte) error {
 		return ErrIndexUpdateFailed
 	}
 	return nil
+}
+
+func (db *DB) Sync() error {
+	if db.activeFile == nil {
+		return nil
+	}
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+	return db.activeFile.Sync()
 }
 
 // Close closes the Bitcask key-value store.

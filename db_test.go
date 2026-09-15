@@ -4,14 +4,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/attic-labs/testify/require"
 	"github.com/spnebula/bitcask-kv-go/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func destroyDB(db *DB) {
 	if db != nil {
 		db.Close()
-		err := os.RemoveAll("/tmp/bitcask-kv-go")
+		err := os.RemoveAll(db.options.DirPath)
 		if err != nil {
 			panic(err)
 		}
@@ -243,4 +243,93 @@ func TestDB_Delete(t *testing.T) {
 	val2, err := db2.Get(utils.GetTestKey(22))
 	require.Nil(t, err)
 	require.Equal(t, val1, val2)
+}
+
+func TestDB_ListKeys(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-list-keys")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	// 数据库为空
+	keys1 := db.ListKeys()
+	require.Equal(t, 0, len(keys1))
+
+	// 只有一条数据
+	err = db.Put(utils.GetTestKey(11), utils.RandomValue(20))
+	require.Nil(t, err)
+	keys2 := db.ListKeys()
+	require.Equal(t, 1, len(keys2))
+
+	// 有多条数据
+	err = db.Put(utils.GetTestKey(22), utils.RandomValue(20))
+	require.Nil(t, err)
+	err = db.Put(utils.GetTestKey(33), utils.RandomValue(20))
+	require.Nil(t, err)
+	err = db.Put(utils.GetTestKey(44), utils.RandomValue(20))
+	require.Nil(t, err)
+
+	keys3 := db.ListKeys()
+	require.Equal(t, 4, len(keys3))
+	for _, k := range keys3 {
+		require.NotNil(t, k)
+	}
+}
+
+func TestDB_Fold(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-fold")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	err = db.Put(utils.GetTestKey(11), utils.RandomValue(20))
+	require.Nil(t, err)
+	err = db.Put(utils.GetTestKey(22), utils.RandomValue(20))
+	require.Nil(t, err)
+	err = db.Put(utils.GetTestKey(33), utils.RandomValue(20))
+	require.Nil(t, err)
+	err = db.Put(utils.GetTestKey(44), utils.RandomValue(20))
+	require.Nil(t, err)
+
+	err = db.Fold(func(key []byte, value []byte) bool {
+		require.NotNil(t, key)
+		require.NotNil(t, value)
+		return true
+	})
+	require.Nil(t, err)
+}
+
+func TestDB_Close(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-close")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	err = db.Put(utils.GetTestKey(11), utils.RandomValue(20))
+	require.Nil(t, err)
+}
+
+func TestDB_Sync(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-sync")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	err = db.Put(utils.GetTestKey(11), utils.RandomValue(20))
+	require.Nil(t, err)
+
+	err = db.Sync()
+	require.Nil(t, err)
 }
