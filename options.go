@@ -16,3 +16,13 @@ var DefaultOptions = &Options{
 	SyncWrites:   false,
 	MemIndexType: index.BTreeType,
 }
+
+type IteratorOptions struct {
+	Prefix  []byte // Prefix presents the prefix of the keys to iterate over.
+	Reverse bool   // Reverse indicates whether to iterate over the keys in reverse order.
+}
+
+var DefaultIteratorOptions = IteratorOptions{
+	Prefix:  nil,
+	Reverse: false,
+}
