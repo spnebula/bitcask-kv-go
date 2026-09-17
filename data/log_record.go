@@ -8,8 +8,9 @@ import (
 type LogRecordType = byte
 
 const (
-	LogRecordNormal  LogRecordType = 0 // Normal record
-	LogRecordDeleted LogRecordType = 1 // Deleted record
+	LogRecordNormal   LogRecordType = iota // Normal record
+	LogRecordDeleted                       // Deleted record
+	LogRecordFinished                      // Finished record
 )
 
 // crc tyoe keysize valuesize
@@ -18,11 +19,19 @@ const (
 	MaxLogRecordHeaderSize = 15
 )
 
+// TransctionRecord is a record of a transaction
+type TransactionRecord struct {
+	Record *LogRecord
+	Pos    *LogRecordPos
+}
+
+// LogRecordPos is the position of a log record
 type LogRecordPos struct {
 	Fid    uint32 // File ID
 	Offset int64  // Offset within the file
 }
 
+// LogRecordHeader is the header of a log record
 type LogRecordHeader struct {
 	crc       uint32        // CRC32 of the key and value
 	KeySize   uint32        // Size of the key
