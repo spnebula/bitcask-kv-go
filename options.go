@@ -26,3 +26,14 @@ var DefaultIteratorOptions = IteratorOptions{
 	Prefix:  nil,
 	Reverse: false,
 }
+
+// WriteBatchOptions declares the options for WriteBatch
+type WriteBatchOptions struct {
+	MaxBatchNum uint // MaxBatchNum presents the maximum number of writes in a batch.
+	SyncWrites  bool // SyncWrites indicates whether to sync the writes to disk.
+}
+
+var DefaultWriteBatchOptions = WriteBatchOptions{
+	MaxBatchNum: 10000,
+	SyncWrites:  true,
+}

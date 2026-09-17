@@ -18,6 +18,8 @@ const (
 
 // DB represents the Bitcask key-value store.
 type DB struct {
+	options *Options
+
 	mtx        *sync.RWMutex
 	fileIDs    []int                     // fileIDs holds the file IDs of the data files in the Bitcask key-value store.
 	activeFile *data.DataFile            // activeFile is the current data file where new log records are appended.
@@ -25,7 +27,7 @@ type DB struct {
 
 	index index.Indexer
 
-	options *Options
+	seqNo uint64 // transaction sequence number
 }
 
 // OpenDB opens a new Bitcask key-value store with the given options.
@@ -107,7 +109,21 @@ func (db *DB) loadIndexFromDataFiles() error {
 		return nil
 	}
 
+	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
+		var ok bool
+		if typ == data.LogRecordNormal {
+			ok = db.index.Put(key, pos)
+		} else {
+			ok = db.index.Delete(key)
+		}
+		if !ok {
+			panic("index update failed")
+		}
+	}
+
+	var transactionRecords = make(map[uint64][]*data.TransactionRecord)
 	var data_file *data.DataFile
+	var current_seq_no uint64 = nonTransactionSeqNo
 	// iterate over the data files and load the index from each file
 	for i, fid := range db.fileIDs {
 		if i == len(db.fileIDs)-1 {
@@ -130,17 +146,38 @@ func (db *DB) loadIndexFromDataFiles() error {
 				Fid:    data_file.FileID,
 				Offset: offset,
 			}
-			if log_record.Type == data.LogRecordDeleted {
-				db.index.Delete(log_record.Key)
-			} else {
-				db.index.Put(log_record.Key, log_record_pos)
+
+			real_key, seq_no := parseLogRecordKey(log_record.Key)
+			if seq_no == nonTransactionSeqNo { // non transaction update index
+				updateIndex(real_key, log_record.Type, log_record_pos)
+			} else { // transaction update index
+				if log_record.Type == data.LogRecordFinished {
+					for _, trx_record := range transactionRecords[seq_no] {
+						updateIndex(trx_record.Record.Key, trx_record.Record.Type, trx_record.Pos)
+					}
+					delete(transactionRecords, seq_no)
+				} else {
+					log_record.Key = real_key
+					transactionRecords[seq_no] = append(transactionRecords[seq_no], &data.TransactionRecord{
+						Record: log_record,
+						Pos:    log_record_pos,
+					})
+				}
 			}
+
+			// update the current sequence number
+			if seq_no > current_seq_no {
+				current_seq_no = seq_no
+			}
+			// update the current offset of active file
 			offset += int64(size)
 		}
 		if len(db.fileIDs)-1 == i {
 			db.activeFile.WriteOffset = offset
 		}
 	}
+
+	db.seqNo = current_seq_no
 
 	return nil
 }
@@ -163,7 +200,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 	}
 
 	var log_record = &data.LogRecord{
-		Key:   key,
+		Key:   logRecordKeyWithSeq(key, nonTransactionSeqNo),
 		Value: value,
 		Type:  data.LogRecordNormal,
 	}
@@ -281,7 +318,7 @@ func (db *DB) Delete(key []byte) error {
 	}
 
 	log_record := &data.LogRecord{
-		Key:   key,
+		Key:   logRecordKeyWithSeq(key, nonTransactionSeqNo),
 		Value: nil,
 		Type:  data.LogRecordDeleted,
 	}

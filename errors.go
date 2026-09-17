@@ -10,4 +10,6 @@ var (
 	ErrDirPathEmpty      = errors.New("dir path is empty")
 	ErrDataFileSizeEmpty = errors.New("data file size is empty")
 	ErrDataDirctCorrupt  = errors.New("data directory is corrupt")
+
+	ErrExceedMaxLogRecordSize = errors.New("exceed max log record size")
 )
