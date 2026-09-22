@@ -1,7 +1,6 @@
 package bitcaskkvgo
 
 import (
-	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -28,6 +27,8 @@ type DB struct {
 	index index.Indexer
 
 	seqNo uint64 // transaction sequence number
+
+	isMerge bool
 }
 
 // OpenDB opens a new Bitcask key-value store with the given options.
@@ -51,10 +52,17 @@ func OpenDB(options *Options) (*DB, error) {
 	db.options = options
 	db.index = index.NewIndex(options.MemIndexType)
 
+	// load merge files
+	if err := db.loadMergeFiles(); err != nil {
+		return nil, err
+	}
+
+	// load data files
 	if err := db.loadDataFiles(); err != nil {
 		return nil, err
 	}
 
+	// load index from data files
 	if err := db.loadIndexFromDataFiles(); err != nil {
 		return nil, err
 	}
@@ -99,85 +107,6 @@ func (db *DB) loadDataFiles() error {
 			return err
 		}
 	}
-
-	return nil
-}
-
-// loadIndexFromDataFiles loads the index from the data files.
-func (db *DB) loadIndexFromDataFiles() error {
-	if len(db.fileIDs) == 0 {
-		return nil
-	}
-
-	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
-		var ok bool
-		if typ == data.LogRecordNormal {
-			ok = db.index.Put(key, pos)
-		} else {
-			ok = db.index.Delete(key)
-		}
-		if !ok {
-			panic("index update failed")
-		}
-	}
-
-	var transactionRecords = make(map[uint64][]*data.TransactionRecord)
-	var data_file *data.DataFile
-	var current_seq_no uint64 = nonTransactionSeqNo
-	// iterate over the data files and load the index from each file
-	for i, fid := range db.fileIDs {
-		if i == len(db.fileIDs)-1 {
-			data_file = db.activeFile
-		} else {
-			data_file = db.olderFiles[uint32(fid)]
-		}
-
-		var offset int64 = 0
-		for {
-			log_record, size, err := data_file.ReadLogRecord(offset)
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				return err
-			}
-
-			var log_record_pos = &data.LogRecordPos{
-				Fid:    data_file.FileID,
-				Offset: offset,
-			}
-
-			real_key, seq_no := parseLogRecordKey(log_record.Key)
-			if seq_no == nonTransactionSeqNo { // non transaction update index
-				updateIndex(real_key, log_record.Type, log_record_pos)
-			} else { // transaction update index
-				if log_record.Type == data.LogRecordFinished {
-					for _, trx_record := range transactionRecords[seq_no] {
-						updateIndex(trx_record.Record.Key, trx_record.Record.Type, trx_record.Pos)
-					}
-					delete(transactionRecords, seq_no)
-				} else {
-					log_record.Key = real_key
-					transactionRecords[seq_no] = append(transactionRecords[seq_no], &data.TransactionRecord{
-						Record: log_record,
-						Pos:    log_record_pos,
-					})
-				}
-			}
-
-			// update the current sequence number
-			if seq_no > current_seq_no {
-				current_seq_no = seq_no
-			}
-			// update the current offset of active file
-			offset += int64(size)
-		}
-		if len(db.fileIDs)-1 == i {
-			db.activeFile.WriteOffset = offset
-		}
-	}
-
-	db.seqNo = current_seq_no
 
 	return nil
 }

@@ -101,6 +101,35 @@ func DecodeLogRecord(data []byte) (*LogRecord, int64) {
 	return log_record, record_size
 }
 
+func EncodeLogRecordPos(pos *LogRecordPos) []byte {
+	bytes := make([]byte, binary.MaxVarintLen64+binary.MaxVarintLen32)
+
+	var index = 0
+	write_size := binary.PutVarint(bytes[index:], int64(pos.Fid))
+	index += write_size
+
+	write_size = binary.PutVarint(bytes[index:], pos.Offset)
+	index += write_size
+
+	return bytes[:index]
+}
+
+func DecodeLogRecordPos(data []byte) (*LogRecordPos, int64) {
+	pos := &LogRecordPos{}
+
+	var index = 0
+	fid, n := binary.Varint(data[index:])
+	index += n
+
+	offset, n := binary.Varint(data[index:])
+	index += n
+
+	pos.Fid = uint32(fid)
+	pos.Offset = int64(offset)
+
+	return pos, int64(index)
+}
+
 func decodeLogRecordHeader(data []byte) (*LogRecordHeader, int64) {
 	if len(data) < 5 {
 		return nil, 0

@@ -16,7 +16,7 @@ func NewFileIOManager(fileName string) (*FileIO, error) {
 	}
 
 	file_io := &FileIO{fd: fd}
-	size, err := file_io.FileSize()
+	size, err := file_io.fileSize()
 	if err != nil {
 		return nil, err
 	}
@@ -26,6 +26,9 @@ func NewFileIOManager(fileName string) (*FileIO, error) {
 }
 
 func (fio *FileIO) Read(b []byte, p1 int64) (int, error) {
+	if p1+int64(len(b)) > fio.size {
+		b = b[:fio.size-p1]
+	}
 	return fio.fd.ReadAt(b, p1)
 }
 
@@ -47,16 +50,14 @@ func (fio *FileIO) Close() error {
 }
 
 func (fio *FileIO) Size() (int64, error) {
-	// stat, err := fio.fd.Stat()
-	// if err != nil {
-	// 	return 0, err
-	// }
-	// size := stat.Size()
-	return fio.size, nil
-	// return size, nil
+	if fio.size > 0 {
+		return fio.size, nil
+	}
+	return fio.fileSize()
 }
 
-func (fio *FileIO) FileSize() (int64, error) {
+func (fio *FileIO) fileSize() (int64, error) {
+
 	stat, err := fio.fd.Stat()
 	if err != nil {
 		return 0, err
