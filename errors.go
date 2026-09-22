@@ -12,4 +12,6 @@ var (
 	ErrDataDirctCorrupt  = errors.New("data directory is corrupt")
 
 	ErrExceedMaxLogRecordSize = errors.New("exceed max log record size")
+
+	ErrMergeIsInProcess = errors.New("merge is in process")
 )

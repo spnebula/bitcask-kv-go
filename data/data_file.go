@@ -10,6 +10,13 @@ import (
 	"github.com/spnebula/bitcask-kv-go/fio"
 )
 
+const (
+	DataFileNameSuffix    = ".data"
+	HintFileName          = "hint-index"
+	MergeFinishedFileName = "merge-finished"
+	SeqNoFileName         = "seq-no"
+)
+
 var (
 	ErrInvalidLogRecordCRC = errors.New("invalid log record CRC")
 )
@@ -36,6 +43,44 @@ func OpenDataFile(dirPath string, fileID uint32) (*DataFile, error) {
 	}
 
 	return dataFile, nil
+}
+
+func GetDataFileName(DirPath string, fileID uint32) string {
+	file_path := filepath.Join(DirPath, fmt.Sprintf("%d", fileID)+DataFileNameSuffix)
+	return file_path
+}
+
+func OpenHintFile(dirPath string) (*DataFile, error) {
+	file_path := filepath.Join(dirPath, HintFileName)
+	return newDataFile(file_path, 0)
+}
+
+func OpenMergeFinishedFile(dirPath string) (*DataFile, error) {
+	file_path := filepath.Join(dirPath, MergeFinishedFileName)
+	return newDataFile(file_path, 0)
+}
+
+func newDataFile(filePath string, fileID uint32) (*DataFile, error) {
+	ioManager, err := fio.NewIOManager(filePath)
+	if err != nil {
+		return nil, err
+	}
+	dataFile := &DataFile{
+		FileID:      fileID,
+		WriteOffset: 0,
+		IoManager:   ioManager,
+	}
+	return dataFile, nil
+}
+
+func (df *DataFile) WriteHintRecord(key []byte, pos *LogRecordPos) error {
+	record := &LogRecord{
+		Key:   key,
+		Value: EncodeLogRecordPos(pos),
+	}
+	enc_record, _ := EncodeLogRecord(record)
+	_, err := df.Write(enc_record)
+	return err
 }
 
 // ReadLogRecord reads a log record from the data file at the given offset.
