@@ -50,6 +50,11 @@ func GetDataFileName(DirPath string, fileID uint32) string {
 	return file_path
 }
 
+func OpenSeqNoFile(dirPath string) (*DataFile, error) {
+	fileName := filepath.Join(dirPath, SeqNoFileName)
+	return newDataFile(fileName, 0)
+}
+
 func OpenHintFile(dirPath string) (*DataFile, error) {
 	file_path := filepath.Join(dirPath, HintFileName)
 	return newDataFile(file_path, 0)

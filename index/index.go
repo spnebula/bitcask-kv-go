@@ -20,15 +20,17 @@ type IndexerType = uint8
 const (
 	BTreeType IndexerType = iota
 	ArtTreeType
+	BPlusTreeType
 )
 
-func NewIndex(indexType IndexerType) Indexer {
+func NewIndex(indexType IndexerType, dirPath string, syncWriter bool) Indexer {
 	switch indexType {
 	case BTreeType:
 		return NewBTree(16)
 	case ArtTreeType:
-		return nil
-		// return NewArtTree(16)
+		return NewAdaptiveRadixTree()
+	case BPlusTreeType:
+		return NewBPlusTree(dirPath, syncWriter)
 	default:
 		return nil
 	}
