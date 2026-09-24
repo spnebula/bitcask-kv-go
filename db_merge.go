@@ -159,6 +159,7 @@ func (db *DB) getMergePath() string {
 	return filepath.Join(dir, base+mergeDirName)
 }
 
+// loadMergeFiles loads the merge files from the merge directory.
 func (db *DB) loadMergeFiles() error {
 	merge_path := db.getMergePath()
 	if _, err := os.Stat(merge_path); os.IsNotExist(err) {

@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/spnebula/bitcask-kv-go/data"
+	"github.com/spnebula/bitcask-kv-go/index"
 )
 
 const nonTransactionSeqNo = uint64(0)
@@ -21,6 +22,12 @@ type WriteBatch struct {
 }
 
 func (db *DB) NewWriteBatch(options WriteBatchOptions) *WriteBatch {
+	// if the db is first initialized, the seq no file does not exist, can use write batch
+	// if the db is not first initialized, the seq no file exists, can not use write batch. It will cause panic, because the db did not close properly last time.
+	// BplusTree use write batch only if the correct SeqNoFile exists
+	if db.options.MemIndexType == index.BPlusTreeType && !db.seqNoFileExists && !db.isFirstInitial {
+		panic("cannot use write batch, seq no file not exists")
+	}
 	return &WriteBatch{
 		options:       options,
 		mu:            &sync.Mutex{},

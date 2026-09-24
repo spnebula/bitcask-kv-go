@@ -2,6 +2,7 @@ package bitcaskkvgo
 
 import (
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,8 @@ const (
 	DataFileNameSuffix = ".data"
 )
 
+const seqNoKey = "seq.no"
+
 // DB represents the Bitcask key-value store.
 type DB struct {
 	options *Options
@@ -26,7 +29,9 @@ type DB struct {
 
 	index index.Indexer
 
-	seqNo uint64 // transaction sequence number
+	seqNo           uint64 // transaction sequence number
+	seqNoFileExists bool   // whether the seq.no file exists
+	isFirstInitial  bool   // whether the db is first initialized
 
 	isMerge bool
 }
@@ -44,13 +49,22 @@ func OpenDB(options *Options) (*DB, error) {
 
 	_, err := os.Stat(options.DirPath)
 	if os.IsNotExist(err) {
+		db.isFirstInitial = true
 		if err := os.Mkdir(options.DirPath, os.ModePerm); err != nil {
 			return nil, err
 		}
 	}
 
+	entries, err := os.ReadDir(options.DirPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		db.isFirstInitial = true
+	}
+
 	db.options = options
-	db.index = index.NewIndex(options.MemIndexType)
+	db.index = index.NewIndex(options.MemIndexType, db.options.DirPath, db.options.SyncWrites)
 
 	// load merge files
 	if err := db.loadMergeFiles(); err != nil {
@@ -62,9 +76,29 @@ func OpenDB(options *Options) (*DB, error) {
 		return nil, err
 	}
 
-	// load index from data files
-	if err := db.loadIndexFromDataFiles(); err != nil {
-		return nil, err
+	if db.options.MemIndexType != index.BPlusTreeType {
+		// load index from hint files
+		if err := db.loadIndexFromHintFiles(); err != nil {
+			return nil, err
+		}
+
+		// load index from data files
+		if err := db.loadIndexFromDataFiles(); err != nil {
+			return nil, err
+		}
+	}
+
+	if db.options.MemIndexType == index.BPlusTreeType {
+		if err := db.loadSeqNo(); err != nil {
+			return nil, err
+		}
+		if db.activeFile != nil {
+			size, err := db.activeFile.IoManager.Size()
+			if err != nil {
+				return nil, err
+			}
+			db.activeFile.WriteOffset = size
+		}
 	}
 
 	return db, nil
@@ -186,6 +220,7 @@ func (db *DB) ListKeys() [][]byte {
 	for iterator.Rewind(); iterator.Valid(); iterator.Next() {
 		keys = append(keys, iterator.Key())
 	}
+	iterator.Close()
 	return keys
 }
 
@@ -205,6 +240,7 @@ func (db *DB) Fold(fn func(key []byte, value []byte) bool) error {
 			return nil
 		}
 	}
+	iterator.Close()
 	return nil
 }
 
@@ -276,6 +312,25 @@ func (db *DB) Sync() error {
 func (db *DB) Close() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
+
+	// save current trx sequence number
+	seqNoFile, err := data.OpenSeqNoFile(db.options.DirPath)
+	if err != nil {
+		return err
+	}
+	record := &data.LogRecord{
+		Key:   []byte(seqNoKey),
+		Value: []byte(strconv.FormatUint(db.seqNo, 10)),
+	}
+	encRecord, _ := data.EncodeLogRecord(record)
+	if _, err := seqNoFile.Write(encRecord); err != nil {
+		return err
+	}
+	if err := seqNoFile.Sync(); err != nil {
+		return err
+	}
+
+	// Close the data files
 	for _, dataFile := range db.olderFiles {
 		if err := dataFile.Close(); err != nil {
 			return err
@@ -350,4 +405,25 @@ func (db *DB) setActiveDataFile() error {
 	db.activeFile = dataFile
 
 	return nil
+}
+
+func (db *DB) loadSeqNo() error {
+	fileName := filepath.Join(db.options.DirPath, data.SeqNoFileName)
+	if _, err := os.Stat(fileName); os.IsNotExist(err) {
+		return nil
+	}
+
+	seqNoFile, err := data.OpenSeqNoFile(db.options.DirPath)
+	if err != nil {
+		return err
+	}
+	record, _, err := seqNoFile.ReadLogRecord(0)
+	seqNo, err := strconv.ParseUint(string(record.Value), 10, 64)
+	if err != nil {
+		return err
+	}
+	db.seqNo = seqNo
+	db.seqNoFileExists = true
+
+	return os.Remove(fileName)
 }
