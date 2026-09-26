@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spnebula/bitcask-kv-go/fio"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +21,7 @@ func RemoveFile(path string) error {
 
 func TestOpenDataFile(t *testing.T) {
 	t.Log("file path:", os.TempDir())
-	df, err := OpenDataFile(os.TempDir(), 0)
+	df, err := OpenDataFile(os.TempDir(), 0, fio.StandardFIO)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +32,12 @@ func TestOpenDataFile(t *testing.T) {
 	}()
 	defer df.Close()
 
-	df2, err := OpenDataFile(os.TempDir(), 111)
+	df2, err := OpenDataFile(os.TempDir(), 111, fio.StandardFIO)
 	if err != nil {
 		t.Fatal(err)
 	}
 	require.NotNil(t, df2)
-	df3, err := OpenDataFile(os.TempDir(), 111)
+	df3, err := OpenDataFile(os.TempDir(), 111, fio.StandardFIO)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +48,7 @@ func TestOpenDataFile(t *testing.T) {
 
 func TestDataFileWrite(t *testing.T) {
 	t.Log("file path:", os.TempDir())
-	df, err := OpenDataFile(os.TempDir(), 0)
+	df, err := OpenDataFile(os.TempDir(), 0, fio.StandardFIO)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestDataFileReadLogRecord(t *testing.T) {
 	require.Equal(t, size, dec_size)
 
 	// write log record to data file
-	df, err := OpenDataFile(os.TempDir(), 0)
+	df, err := OpenDataFile(os.TempDir(), 0, fio.StandardFIO)
 	if err != nil {
 		t.Fatal(err)
 	}

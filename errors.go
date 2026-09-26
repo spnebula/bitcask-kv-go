@@ -14,4 +14,5 @@ var (
 	ErrExceedMaxLogRecordSize = errors.New("exceed max log record size")
 
 	ErrMergeIsInProcess = errors.New("merge is in process")
+	ErrDatabaseIsUsing  = errors.New("the database directory is used by another process")
 )
