@@ -7,14 +7,18 @@ type Options struct {
 	DataFileSize int64  // DataFileSize 表示数据文件大小
 
 	SyncWrites   bool
+	BytesPerSync uint // BytesPerSync 累计写到多少字节进行持久化
 	MemIndexType index.IndexerType
+
+	MMapAtStartup bool // MMapAtStartup 是否在启动时将数据文件映射到内存
 }
 
 var DefaultOptions = &Options{
-	DirPath:      "/tmp",
-	DataFileSize: 64 * 1024 * 1024,
-	SyncWrites:   false,
-	MemIndexType: index.BTreeType,
+	DirPath:       "/tmp",
+	DataFileSize:  64 * 1024 * 1024,
+	SyncWrites:    false,
+	MemIndexType:  index.BTreeType,
+	MMapAtStartup: true,
 }
 
 type IteratorOptions struct {

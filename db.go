@@ -1,6 +1,7 @@
 package bitcaskkvgo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -8,7 +9,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gofrs/flock"
 	"github.com/spnebula/bitcask-kv-go/data"
+	"github.com/spnebula/bitcask-kv-go/fio"
 	"github.com/spnebula/bitcask-kv-go/index"
 )
 
@@ -16,7 +19,10 @@ const (
 	DataFileNameSuffix = ".data"
 )
 
-const seqNoKey = "seq.no"
+const (
+	seqNoKey     = "seq.no"
+	fileLockName = "flock"
+)
 
 // DB represents the Bitcask key-value store.
 type DB struct {
@@ -34,6 +40,9 @@ type DB struct {
 	isFirstInitial  bool   // whether the db is first initialized
 
 	isMerge bool
+
+	fileLock   *flock.Flock // file lock for the database
+	bytesWrite uint         // number of bytes written to the database
 }
 
 // OpenDB opens a new Bitcask key-value store with the given options.
@@ -54,6 +63,16 @@ func OpenDB(options *Options) (*DB, error) {
 			return nil, err
 		}
 	}
+
+	fileLock := flock.New(filepath.Join(options.DirPath, fileLockName))
+	hold, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !hold {
+		return nil, ErrDatabaseIsUsing
+	}
+	db.fileLock = fileLock
 
 	entries, err := os.ReadDir(options.DirPath)
 	if err != nil {
@@ -85,6 +104,13 @@ func OpenDB(options *Options) (*DB, error) {
 		// load index from data files
 		if err := db.loadIndexFromDataFiles(); err != nil {
 			return nil, err
+		}
+
+		// reset io type to standard io
+		if db.options.MMapAtStartup {
+			if err := db.resetIoType(); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -124,13 +150,18 @@ func (db *DB) loadDataFiles() error {
 	sort.Ints(fids)
 	db.fileIDs = fids
 
+	var io_type fio.FileIOType
 	for i, fid := range fids {
-		data_file, err := data.OpenDataFile(db.options.DirPath, uint32(fid))
+		io_type = fio.StandardFIO
+		if db.options.MMapAtStartup && i != len(fids)-1 {
+			io_type = fio.MemoryMap
+		}
+
+		data_file, err := data.OpenDataFile(db.options.DirPath, uint32(fid), io_type)
 		if err != nil {
 			return err
 		}
-		db.olderFiles[data_file.FileID] = data_file
-		if i == len(db.olderFiles)-1 {
+		if i == len(fids)-1 {
 			db.activeFile = data_file
 		} else {
 			db.olderFiles[uint32(fid)] = data_file
@@ -310,6 +341,15 @@ func (db *DB) Sync() error {
 
 // Close closes the Bitcask key-value store.
 func (db *DB) Close() error {
+	defer func() {
+		if err := db.fileLock.Unlock(); err != nil {
+			panic(fmt.Sprintf("failed to unlock the directory, %v", err))
+		}
+	}()
+	if db.activeFile == nil {
+		return nil
+	}
+
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -375,11 +415,21 @@ func (db *DB) appendLogRecord(log_record *data.LogRecord) (*data.LogRecordPos, e
 	if err != nil {
 		return nil, err
 	}
+	// bytes written num
+	db.bytesWrite += uint(len(encRecord))
 
-	// acording to user config
-	if db.options.SyncWrites {
+	// whether to sync according to user config
+	var needSync = db.options.SyncWrites
+	if !needSync && db.options.BytesPerSync > 0 && db.bytesWrite >= db.options.BytesPerSync {
+		needSync = true
+	}
+	if needSync {
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
+		}
+		// 清空累计值
+		if db.bytesWrite > 0 {
+			db.bytesWrite = 0
 		}
 	}
 
@@ -397,7 +447,7 @@ func (db *DB) setActiveDataFile() error {
 		initFileID = db.activeFile.FileID + 1
 	}
 
-	dataFile, err := data.OpenDataFile(db.options.DirPath, initFileID)
+	dataFile, err := data.OpenDataFile(db.options.DirPath, initFileID, fio.StandardFIO)
 	if err != nil {
 		return err
 	}
@@ -426,4 +476,20 @@ func (db *DB) loadSeqNo() error {
 	db.seqNoFileExists = true
 
 	return os.Remove(fileName)
+}
+
+func (db *DB) resetIoType() error {
+	if db.activeFile == nil {
+		return nil
+	}
+
+	if err := db.activeFile.SetIOManager(db.options.DirPath, fio.StandardFIO); err != nil {
+		return err
+	}
+	for _, dataFile := range db.olderFiles {
+		if err := dataFile.SetIOManager(db.options.DirPath, fio.StandardFIO); err != nil {
+			return err
+		}
+	}
+	return nil
 }

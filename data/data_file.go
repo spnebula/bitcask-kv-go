@@ -29,20 +29,9 @@ type DataFile struct {
 }
 
 // OpenDataFile opens a data file with the given file ID.
-func OpenDataFile(dirPath string, fileID uint32) (*DataFile, error) {
-
+func OpenDataFile(dirPath string, fileID uint32, ioType fio.FileIOType) (*DataFile, error) {
 	file_path := filepath.Join(dirPath, fmt.Sprintf("%d.data", fileID))
-
-	ioManager, err := fio.NewIOManager(file_path)
-	if err != nil {
-		return nil, err
-	}
-	dataFile := &DataFile{
-		FileID:    fileID,
-		IoManager: ioManager,
-	}
-
-	return dataFile, nil
+	return newDataFile(file_path, fileID, ioType)
 }
 
 func GetDataFileName(DirPath string, fileID uint32) string {
@@ -52,21 +41,21 @@ func GetDataFileName(DirPath string, fileID uint32) string {
 
 func OpenSeqNoFile(dirPath string) (*DataFile, error) {
 	fileName := filepath.Join(dirPath, SeqNoFileName)
-	return newDataFile(fileName, 0)
+	return newDataFile(fileName, 0, fio.StandardFIO)
 }
 
 func OpenHintFile(dirPath string) (*DataFile, error) {
 	file_path := filepath.Join(dirPath, HintFileName)
-	return newDataFile(file_path, 0)
+	return newDataFile(file_path, 0, fio.StandardFIO)
 }
 
 func OpenMergeFinishedFile(dirPath string) (*DataFile, error) {
 	file_path := filepath.Join(dirPath, MergeFinishedFileName)
-	return newDataFile(file_path, 0)
+	return newDataFile(file_path, 0, fio.StandardFIO)
 }
 
-func newDataFile(filePath string, fileID uint32) (*DataFile, error) {
-	ioManager, err := fio.NewIOManager(filePath)
+func newDataFile(filePath string, fileID uint32, ioType fio.FileIOType) (*DataFile, error) {
+	ioManager, err := fio.NewIOManager(filePath, ioType)
 	if err != nil {
 		return nil, err
 	}
@@ -160,4 +149,16 @@ func (df *DataFile) Sync() error {
 
 func (df *DataFile) Close() error {
 	return df.IoManager.Close()
+}
+
+func (df *DataFile) SetIOManager(dirPath string, ioType fio.FileIOType) error {
+	if err := df.IoManager.Close(); err != nil {
+		return err
+	}
+	ioManager, err := fio.NewIOManager(GetDataFileName(dirPath, df.FileID), ioType)
+	if err != nil {
+		return err
+	}
+	df.IoManager = ioManager
+	return nil
 }

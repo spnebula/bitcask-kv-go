@@ -333,3 +333,25 @@ func TestDB_Sync(t *testing.T) {
 	err = db.Sync()
 	require.Nil(t, err)
 }
+
+func TestDB_FileLock(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-filelock")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	_, err = OpenDB(opts)
+	require.Equal(t, ErrDatabaseIsUsing, err)
+
+	err = db.Close()
+	require.Nil(t, err)
+
+	db2, err := OpenDB(opts)
+	require.Nil(t, err)
+	require.NotNil(t, db2)
+	err = db2.Close()
+	require.Nil(t, err)
+}
