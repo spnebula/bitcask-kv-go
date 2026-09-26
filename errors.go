@@ -13,6 +13,9 @@ var (
 
 	ErrExceedMaxLogRecordSize = errors.New("exceed max log record size")
 
-	ErrMergeIsInProcess = errors.New("merge is in process")
-	ErrDatabaseIsUsing  = errors.New("the database directory is used by another process")
+	ErrMergeIsInProcess          = errors.New("merge is in process")
+	ErrDatabaseIsUsing           = errors.New("the database directory is used by another process")
+	ErrDataFileMergeRatioInvalid = errors.New("data file merge ratio is invalid")
+	ErrMergeRatioUnReachable     = errors.New("merge ratio is unreachable")
+	ErrNoEnoughSpaceForMerge     = errors.New("no enough disk space for merge")
 )

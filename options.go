@@ -11,14 +11,17 @@ type Options struct {
 	MemIndexType index.IndexerType
 
 	MMapAtStartup bool // MMapAtStartup 是否在启动时将数据文件映射到内存
+
+	DataFileMergeRatio float32 // DataFileMergeRatio 表示数据文件合并比例
 }
 
 var DefaultOptions = &Options{
-	DirPath:       "/tmp",
-	DataFileSize:  64 * 1024 * 1024,
-	SyncWrites:    false,
-	MemIndexType:  index.BTreeType,
-	MMapAtStartup: true,
+	DirPath:            "/tmp",
+	DataFileSize:       64 * 1024 * 1024,
+	SyncWrites:         false,
+	MemIndexType:       index.BTreeType,
+	MMapAtStartup:      true,
+	DataFileMergeRatio: 0.5,
 }
 
 type IteratorOptions struct {

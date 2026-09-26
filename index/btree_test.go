@@ -11,10 +11,10 @@ func TestBTree_Put(t *testing.T) {
 	bt := NewBTree(2)
 
 	res1 := bt.Put(nil, &data.LogRecordPos{Fid: 1, Offset: 100})
-	assert.True(t, res1)
+	assert.Nil(t, res1)
 
 	res2 := bt.Put([]byte("key1"), &data.LogRecordPos{Fid: 2, Offset: 200})
-	assert.True(t, res2)
+	assert.Nil(t, res2)
 }
 
 func TestBTree_Get(t *testing.T) {
@@ -31,7 +31,7 @@ func TestBTree_Get(t *testing.T) {
 	assert.Nil(t, posNil)
 
 	res := bt.Put([]byte("a"), &data.LogRecordPos{Fid: 3, Offset: 300})
-	assert.True(t, res)
+	assert.Nil(t, res)
 
 	posA := bt.Get([]byte("a"))
 	assert.NotNil(t, posA)
@@ -46,13 +46,13 @@ func TestBTree_Delete(t *testing.T) {
 
 	bt.Put([]byte("key1"), &data.LogRecordPos{Fid: 2, Offset: 200})
 
-	res := bt.Delete([]byte("key1"))
+	_, res := bt.Delete([]byte("key1"))
 	assert.True(t, res)
 
 	pos := bt.Get([]byte("key1"))
 	assert.Nil(t, pos)
 
-	var resNonExistent bool = bt.Delete([]byte("nonexistent"))
+	_, resNonExistent := bt.Delete([]byte("nonexistent"))
 	assert.False(t, resNonExistent)
 
 	t.Log("BTree Delete test passed")

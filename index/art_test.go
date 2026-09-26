@@ -31,11 +31,11 @@ func TestAdaptiveRadixTree_Get(t *testing.T) {
 func TestAdaptiveRadixTree_Delete(t *testing.T) {
 	art := NewAdaptiveRadixTree()
 
-	res1 := art.Delete([]byte("not exist"))
+	_, res1 := art.Delete([]byte("not exist"))
 	require.False(t, res1)
 
 	art.Put([]byte("key-1"), &data.LogRecordPos{Fid: 1, Offset: 12})
-	res2 := art.Delete([]byte("key-1"))
+	_, res2 := art.Delete([]byte("key-1"))
 	require.True(t, res2)
 	pos := art.Get([]byte("key-1"))
 	require.Nil(t, pos)
