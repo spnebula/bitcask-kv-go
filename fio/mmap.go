@@ -11,10 +11,14 @@ type MMap struct {
 }
 
 func NewMMapIOManager(fileName string) (*MMap, error) {
-	_, err := os.OpenFile(fileName, os.O_CREATE, DataFilePermission)
+	f, err := os.OpenFile(fileName, os.O_CREATE, DataFilePermission)
 	if err != nil {
 		return nil, err
 	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+
 	readerAt, err := mmap.Open(fileName)
 	if err != nil {
 		return nil, err
