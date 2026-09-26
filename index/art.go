@@ -21,10 +21,10 @@ func NewAdaptiveRadixTree() *AdaptiveRadixTree {
 	}
 }
 
-func (a *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
-	a.lock.RLock()
-	defer a.lock.RUnlock()
-	val, ok := a.tree.Search(key)
+func (art *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
+	art.lock.RLock()
+	defer art.lock.RUnlock()
+	val, ok := art.tree.Search(key)
 	if !ok {
 		return nil
 	}
@@ -32,32 +32,34 @@ func (a *AdaptiveRadixTree) Get(key []byte) *data.LogRecordPos {
 	return val.(*data.LogRecordPos)
 }
 
-func (a *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) bool {
-	a.lock.Lock()
-	a.tree.Insert(key, pos)
-	a.lock.Unlock()
-
-	return true
-}
-
-func (a *AdaptiveRadixTree) Delete(key []byte) bool {
-	a.lock.Lock()
-	defer a.lock.Unlock()
-	_, ok := a.tree.Delete(key)
-	if !ok {
-		return false
+func (art *AdaptiveRadixTree) Put(key []byte, pos *data.LogRecordPos) *data.LogRecordPos {
+	art.lock.Lock()
+	oldValue, _ := art.tree.Insert(key, pos)
+	art.lock.Unlock()
+	if oldValue == nil {
+		return nil
 	}
-	return true
+	return oldValue.(*data.LogRecordPos)
 }
 
-func (a *AdaptiveRadixTree) Iterator(reverse bool) Iterator {
-	a.lock.RLock()
-	defer a.lock.RUnlock()
-	return newARTIterator(a.tree, reverse)
+func (art *AdaptiveRadixTree) Delete(key []byte) (*data.LogRecordPos, bool) {
+	art.lock.Lock()
+	defer art.lock.Unlock()
+	old_item, ok := art.tree.Delete(key)
+	if !ok {
+		return nil, false
+	}
+	return old_item.(*data.LogRecordPos), true
 }
 
-func (a *AdaptiveRadixTree) Size() int {
-	return a.tree.Size()
+func (art *AdaptiveRadixTree) Iterator(reverse bool) Iterator {
+	art.lock.RLock()
+	defer art.lock.RUnlock()
+	return newARTIterator(art.tree, reverse)
+}
+
+func (art *AdaptiveRadixTree) Size() int {
+	return art.tree.Size()
 }
 
 // Art 索引迭代器

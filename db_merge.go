@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/spnebula/bitcask-kv-go/data"
+	"github.com/spnebula/bitcask-kv-go/utils"
 )
 
 const (
@@ -26,8 +27,28 @@ func (db *DB) Merge() error {
 		db.mtx.Unlock()
 		return ErrMergeIsInProcess
 	}
-	db.isMerge = true
 
+	total_size, err := utils.DirSize(db.options.DirPath)
+	if err != nil {
+		db.mtx.Unlock()
+		return err
+	}
+	if float32(db.reclaminSize)/float32(total_size) < db.options.DataFileMergeRatio {
+		db.mtx.Unlock()
+		return ErrMergeRatioUnReachable
+	}
+
+	avail_size, err := utils.AvailableDiskSpace()
+	if err != nil {
+		db.mtx.Unlock()
+		return err
+	}
+	if total_size-int64(db.reclaminSize) >= int64(avail_size) {
+		db.mtx.Unlock()
+		return ErrNoEnoughSpaceForMerge
+	}
+
+	db.isMerge = true
 	defer func() {
 		db.isMerge = false
 	}()
@@ -42,7 +63,7 @@ func (db *DB) Merge() error {
 	db.olderFiles[db.activeFile.FileID] = db.activeFile
 
 	// create new active file
-	err := db.setActiveDataFile()
+	err = db.setActiveDataFile()
 	if err != nil {
 		db.mtx.Unlock()
 		return err
@@ -74,14 +95,21 @@ func (db *DB) Merge() error {
 		return err
 	}
 
-	// open a nwe temporary db
-	merge_options := db.options
+	// open a new temporary db
+	// NOTE: must deep copy the options, otherwise mutating DirPath/SyncWrites
+	// would corrupt the original db's options (and the caller's Options).
+	merge_options := *db.options
 	merge_options.DirPath = merge_path
 	merge_options.SyncWrites = false
-	merge_db, err := OpenDB(merge_options)
+	merge_db, err := OpenDB(&merge_options)
 	if err != nil {
 		return err
 	}
+	// release the file lock and descriptors held by the temporary db,
+	// otherwise reopening the database will fail with ErrDatabaseIsUsing.
+	defer func() {
+		_ = merge_db.Close()
+	}()
 
 	hint_file, err := data.OpenHintFile(merge_path)
 	if err != nil {
@@ -183,6 +211,9 @@ func (db *DB) loadMergeFiles() error {
 		if dir_entry.Name() == data.SeqNoFileName {
 			continue
 		}
+		if dir_entry.Name() == fileLockName {
+			continue
+		}
 		merge_file_names = append(merge_file_names, dir_entry.Name())
 	}
 
@@ -246,12 +277,14 @@ func (db *DB) loadIndexFromHintFiles() error {
 		return nil
 	}
 
-	hint_file_name := filepath.Join(db.getMergePath(), data.HintFileName)
+	// loadMergeFiles has already moved the hint file into the data directory
+	// (and removed the merge directory), so read it from DirPath here.
+	hint_file_name := filepath.Join(db.options.DirPath, data.HintFileName)
 	if _, err := os.Stat(hint_file_name); os.IsNotExist(err) {
 		return nil
 	}
 
-	hint_file, err := data.OpenHintFile(db.getMergePath())
+	hint_file, err := data.OpenHintFile(db.options.DirPath)
 	if err != nil {
 		return err
 	}
@@ -267,9 +300,10 @@ func (db *DB) loadIndexFromHintFiles() error {
 			return err
 		}
 		// parse log record key
+		real_key, _ := parseLogRecordKey(log_record.Key)
 
 		pos, _ := data.DecodeLogRecordPos(log_record.Value)
-		db.index.Put(log_record.Key, pos)
+		db.index.Put(real_key, pos)
 
 		// update read offset
 		offset += int64(size)
@@ -297,14 +331,15 @@ func (db *DB) loadIndexFromDataFiles() error {
 	}
 
 	updateIndex := func(key []byte, typ data.LogRecordType, pos *data.LogRecordPos) {
-		var ok bool
+		var old_pos *data.LogRecordPos
 		if typ == data.LogRecordNormal {
-			ok = db.index.Put(key, pos)
+			old_pos = db.index.Put(key, pos)
 		} else {
-			ok = db.index.Delete(key)
+			old_pos, _ = db.index.Delete(key)
+			db.reclaminSize += uint64(pos.Size)
 		}
-		if !ok {
-			panic("index update failed")
+		if old_pos != nil {
+			db.reclaminSize += uint64(old_pos.Size)
 		}
 	}
 
@@ -337,6 +372,7 @@ func (db *DB) loadIndexFromDataFiles() error {
 			var log_record_pos = &data.LogRecordPos{
 				Fid:    data_file.FileID,
 				Offset: offset,
+				Size:   uint32(size),
 			}
 
 			real_key, seq_no := parseLogRecordKey(log_record.Key)

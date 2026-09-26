@@ -355,3 +355,30 @@ func TestDB_FileLock(t *testing.T) {
 	err = db2.Close()
 	require.Nil(t, err)
 }
+
+func TestDB_Stat(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-stat")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	for i := 100; i < 10000; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.RandomValue(128))
+		require.Nil(t, err)
+	}
+	for i := 100; i < 1000; i++ {
+		err := db.Delete(utils.GetTestKey(i))
+		require.Nil(t, err)
+	}
+	for i := 2000; i < 5000; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.RandomValue(128))
+		require.Nil(t, err)
+	}
+
+	stat := db.Stat()
+	require.NotNil(t, stat)
+	t.Logf("%+v", stat)
+}

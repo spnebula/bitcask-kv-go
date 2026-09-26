@@ -8,9 +8,9 @@ import (
 )
 
 type Indexer interface {
-	Get(key []byte) *data.LogRecordPos           // 根据 key 获取数据位置信息
-	Put(key []byte, pos *data.LogRecordPos) bool // 向索引中存储 key 对应的数据位置信息
-	Delete(key []byte) bool                      // 从索引中删除 key 对应的数据位置信息
+	Get(key []byte) *data.LogRecordPos                         // 根据 key 获取数据位置信息
+	Put(key []byte, pos *data.LogRecordPos) *data.LogRecordPos // 向索引中存储 key 对应的数据位置信息
+	Delete(key []byte) (*data.LogRecordPos, bool)              // 从索引中删除 key 对应的数据位置信息
 	Iterator(reverse bool) Iterator
 	Size() int
 }

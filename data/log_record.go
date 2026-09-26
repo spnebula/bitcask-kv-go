@@ -29,6 +29,7 @@ type TransactionRecord struct {
 type LogRecordPos struct {
 	Fid    uint32 // File ID
 	Offset int64  // Offset within the file
+	Size   uint32 // Size of the record in disk
 }
 
 // LogRecordHeader is the header of a log record
@@ -102,13 +103,16 @@ func DecodeLogRecord(data []byte) (*LogRecord, int64) {
 }
 
 func EncodeLogRecordPos(pos *LogRecordPos) []byte {
-	bytes := make([]byte, binary.MaxVarintLen64+binary.MaxVarintLen32)
+	bytes := make([]byte, binary.MaxVarintLen64+binary.MaxVarintLen32*2)
 
 	var index = 0
 	write_size := binary.PutVarint(bytes[index:], int64(pos.Fid))
 	index += write_size
 
 	write_size = binary.PutVarint(bytes[index:], pos.Offset)
+	index += write_size
+
+	write_size = binary.PutVarint(bytes[index:], int64(pos.Size))
 	index += write_size
 
 	return bytes[:index]
@@ -124,8 +128,12 @@ func DecodeLogRecordPos(data []byte) (*LogRecordPos, int64) {
 	offset, n := binary.Varint(data[index:])
 	index += n
 
+	size, n := binary.Varint(data[index:])
+	index += n
+
 	pos.Fid = uint32(fid)
 	pos.Offset = int64(offset)
+	pos.Size = uint32(size)
 
 	return pos, int64(index)
 }

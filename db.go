@@ -13,6 +13,7 @@ import (
 	"github.com/spnebula/bitcask-kv-go/data"
 	"github.com/spnebula/bitcask-kv-go/fio"
 	"github.com/spnebula/bitcask-kv-go/index"
+	"github.com/spnebula/bitcask-kv-go/utils"
 )
 
 const (
@@ -43,6 +44,15 @@ type DB struct {
 
 	fileLock   *flock.Flock // file lock for the database
 	bytesWrite uint         // number of bytes written to the database
+
+	reclaminSize uint64 // reclamation size
+}
+
+type Stat struct {
+	KeyNum          uint  // key total number
+	DataFileNum     uint  // data file number
+	ReclaimableSize int64 // can merge data size
+	DiskSize        int64 // data dir size in disk
 }
 
 // OpenDB opens a new Bitcask key-value store with the given options.
@@ -183,8 +193,33 @@ func (db *DB) checkOptions(options *Options) error {
 	if options.DataFileSize <= 0 {
 		return ErrDataFileSizeEmpty
 	}
+	if options.DataFileMergeRatio < 0 || options.DataFileMergeRatio > 1 {
+		return ErrDataFileMergeRatioInvalid
+	}
 
 	return nil
+}
+
+func (db *DB) Stat() *Stat {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+
+	var data_files_num = uint(len(db.olderFiles))
+	if db.activeFile != nil {
+		data_files_num++
+	}
+
+	dirSize, err := utils.DirSize(db.options.DirPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to get dir size: %v", err))
+	}
+
+	return &Stat{
+		KeyNum:          uint(db.index.Size()),
+		DataFileNum:     data_files_num,
+		ReclaimableSize: int64(db.reclaminSize),
+		DiskSize:        dirSize,
+	}
 }
 
 // Put inserts a new log record into the Bitcask key-value store.
@@ -206,8 +241,8 @@ func (db *DB) Put(key []byte, value []byte) error {
 		return err
 	}
 
-	if ok := db.index.Put(key, pos); !ok {
-		return ErrIndexUpdateFailed
+	if old_pos := db.index.Put(key, pos); old_pos != nil {
+		db.reclaminSize += uint64(old_pos.Size)
 	}
 
 	return nil
@@ -319,14 +354,20 @@ func (db *DB) Delete(key []byte) error {
 		Type:  data.LogRecordDeleted,
 	}
 
-	_, err := db.appendLogRecord(log_record)
+	pos, err := db.appendLogRecord(log_record)
 	if err != nil {
 		return err
 	}
+	db.reclaminSize += uint64(pos.Size)
 
-	if ok := db.index.Delete(key); !ok {
+	old_pos, ok := db.index.Delete(key)
+	if !ok {
 		return ErrIndexUpdateFailed
 	}
+	if old_pos != nil {
+		db.reclaminSize += uint64(old_pos.Size)
+	}
+
 	return nil
 }
 
@@ -436,6 +477,7 @@ func (db *DB) appendLogRecord(log_record *data.LogRecord) (*data.LogRecordPos, e
 	pos := &data.LogRecordPos{
 		Fid:    db.activeFile.FileID,
 		Offset: writeOffset,
+		Size:   uint32(size),
 	}
 	return pos, nil
 }

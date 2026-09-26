@@ -49,11 +49,11 @@ func TestBPlusTree_Delete(t *testing.T) {
 	}()
 	tree := NewBPlusTree(path, false)
 
-	res1 := tree.Delete([]byte("not exist"))
+	_, res1 := tree.Delete([]byte("not exist"))
 	require.False(t, res1)
 
 	tree.Put([]byte("aac"), &data.LogRecordPos{Fid: 123, Offset: 999})
-	res2 := tree.Delete([]byte("aac"))
+	_, res2 := tree.Delete([]byte("aac"))
 	require.True(t, res2)
 
 	pos1 := tree.Get([]byte("aac"))
