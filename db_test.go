@@ -382,3 +382,29 @@ func TestDB_Stat(t *testing.T) {
 	require.NotNil(t, stat)
 	t.Logf("%+v", stat)
 }
+
+func TestDB_Backup(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("", "bitcask-go-backup")
+	opts.DirPath = dir
+	db, err := OpenDB(opts)
+	defer destroyDB(db)
+	require.Nil(t, err)
+	require.NotNil(t, db)
+
+	for i := 1; i < 1000000; i++ {
+		err := db.Put(utils.GetTestKey(i), utils.RandomValue(128))
+		require.Nil(t, err)
+	}
+
+	backupDir, _ := os.MkdirTemp("", "bitcask-go-backup-test")
+	err = db.Backup(backupDir)
+	require.Nil(t, err)
+
+	opts1 := DefaultOptions
+	opts1.DirPath = backupDir
+	db2, err := OpenDB(opts1)
+	defer destroyDB(db2)
+	require.Nil(t, err)
+	require.NotNil(t, db2)
+}

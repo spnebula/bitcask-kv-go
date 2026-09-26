@@ -200,6 +200,13 @@ func (db *DB) checkOptions(options *Options) error {
 	return nil
 }
 
+// Backup 备份数据库，将数据文件拷贝到新的目录中
+func (db *DB) Backup(dir string) error {
+	db.mtx.RLock()
+	defer db.mtx.RUnlock()
+	return utils.CopyDir(db.options.DirPath, dir, []string{fileLockName})
+}
+
 func (db *DB) Stat() *Stat {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
@@ -394,6 +401,15 @@ func (db *DB) Close() error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
+	// Sync the active data file before writing the seq.no marker.
+	// close(2) does NOT flush to disk, and on Linux close(2) never reports
+	// writeback errors -- only Sync does. Ordering also matters: the seq.no
+	// file is a commit marker, so the data must hit the disk first,
+	// otherwise a crash can leave the seq.no advanced with data lost.
+	if err := db.activeFile.Sync(); err != nil {
+		return err
+	}
+
 	// save current trx sequence number
 	seqNoFile, err := data.OpenSeqNoFile(db.options.DirPath)
 	if err != nil {
@@ -408,6 +424,10 @@ func (db *DB) Close() error {
 		return err
 	}
 	if err := seqNoFile.Sync(); err != nil {
+		return err
+	}
+	// Close explicitly; otherwise the fd lingers until the GC finalizer runs.
+	if err := seqNoFile.Close(); err != nil {
 		return err
 	}
 
